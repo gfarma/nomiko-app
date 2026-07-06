@@ -1,0 +1,318 @@
+// Nomiko App — Prisma schema (Prisma 7, PostgreSQL)
+// Connection URL lives in prisma.config.ts (CLI) and src/lib/prisma.ts (runtime
+// driver adapter). Roles/statuses are strings validated in src/lib/constants.ts
+// to keep them configurable. Money is integer cents; time is integer minutes.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Firm {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  vatNumber     String? // ΑΦΜ
+  address       String?
+  phone         String?
+  email         String?
+  // Comma-separated practice area keys, e.g. "civil,criminal,commercial"
+  practiceAreas String   @default("civil")
+  publicBio     String? // shown on the public contact page
+  createdAt     DateTime @default(now())
+
+  users     User[]
+  clients   Client[]
+  cases     Case[]
+  templates PracticeAreaTemplate[]
+  leads     Lead[]
+  invoices  Invoice[]
+  auditLogs AuditLog[]
+  aiLogs    AIInteractionLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  // owner | lawyer | trainee | staff
+  role         String   @default("lawyer")
+  active       Boolean  @default(true)
+  // default hourly rate in cents, used to prefill time entries
+  hourlyRateCents Int   @default(12000)
+  firmId       String
+  firm         Firm     @relation(fields: [firmId], references: [id])
+  createdAt    DateTime @default(now())
+
+  assignments CaseAssignment[]
+  timeEntries TimeEntry[]
+  deadlines   Deadline[]
+  documents   Document[]
+  notes       Note[]
+  auditLogs   AuditLog[]
+  aiLogs      AIInteractionLog[]
+
+  @@index([firmId])
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  firmId    String
+  firm      Firm     @relation(fields: [firmId], references: [id])
+  // individual | company
+  type      String   @default("individual")
+  fullName  String
+  vatNumber String? // ΑΦΜ
+  idNumber  String? // ΑΔΤ
+  email     String?
+  phone     String?
+  address   String?
+  notes     String?
+  // GDPR consent tracking
+  consentDataProcessing Boolean   @default(false)
+  consentMarketing      Boolean   @default(false)
+  consentDate           DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cases    Case[]
+  invoices Invoice[]
+
+  @@index([firmId])
+}
+
+model PracticeAreaTemplate {
+  id         String   @id @default(cuid())
+  firmId     String
+  firm       Firm     @relation(fields: [firmId], references: [id])
+  // practice area key: civil | criminal | commercial | labor | administrative | family | real_estate | other
+  area       String
+  name       String
+  // JSON string: [{ key, label, type: "text"|"number"|"date"|"select", options?: string[] }]
+  fieldsJson String   @default("[]")
+  createdAt  DateTime @default(now())
+
+  cases Case[]
+
+  @@index([firmId])
+}
+
+model Case {
+  id           String   @id @default(cuid())
+  firmId       String
+  firm         Firm     @relation(fields: [firmId], references: [id])
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+  title        String
+  caseNumber   String? // ΓΑΚ/ΕΑΚ ή αρ. πρωτοκόλλου
+  practiceArea String   @default("civil")
+  court        String? // δικαστήριο / αρχή
+  stage        String? // στάδιο υπόθεσης (free text)
+  // active | pending | closed | archived
+  status       String   @default("active")
+  description  String?
+  templateId   String?
+  template     PracticeAreaTemplate? @relation(fields: [templateId], references: [id])
+  // JSON string of { [fieldKey]: value } per template
+  customFieldsJson String @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignments CaseAssignment[]
+  deadlines   Deadline[]
+  documents   Document[]
+  timeEntries TimeEntry[]
+  notes       Note[]
+  invoices    Invoice[]
+
+  @@index([firmId])
+  @@index([clientId])
+}
+
+model CaseAssignment {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([caseId, userId])
+}
+
+model Deadline {
+  id     String   @id @default(cuid())
+  firmId String
+  caseId String
+  case   Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title  String
+  // procedural | administrative | other  (δικονομική / διοικητική / άλλη)
+  type   String   @default("procedural")
+  dueAt  DateTime
+  // pending | done | missed
+  status String   @default("pending")
+  notes  String?
+  remindDaysBefore Int @default(5)
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([firmId, dueAt])
+  @@index([caseId])
+}
+
+model Document {
+  id       String @id @default(cuid())
+  firmId   String
+  caseId   String
+  case     Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title    String
+  // pleading | correspondence | evidence | contract | authorization | other
+  docType  String @default("other")
+  fileName String
+  filePath String // storage provider key
+  mimeType String
+  size     Int
+  version  Int    @default(1)
+  // previous version chain
+  parentId String?
+  uploadedById String?
+  uploadedBy   User?  @relation(fields: [uploadedById], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([firmId])
+  @@index([caseId])
+}
+
+model TimeEntry {
+  id        String   @id @default(cuid())
+  firmId    String
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  date      DateTime
+  minutes   Int
+  description String
+  billable  Boolean  @default(true)
+  rateCents Int      @default(12000) // hourly rate in cents at time of entry
+  invoiceLineId String?
+  createdAt DateTime @default(now())
+
+  @@index([firmId, date])
+  @@index([caseId])
+}
+
+model Invoice {
+  id        String   @id @default(cuid())
+  firmId    String
+  firm      Firm     @relation(fields: [firmId], references: [id])
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  caseId    String?
+  case      Case?    @relation(fields: [caseId], references: [id])
+  number    String
+  issueDate DateTime @default(now())
+  dueDate   DateTime?
+  // draft | issued | paid | void
+  status    String   @default("draft")
+  subtotalCents Int  @default(0)
+  vatRate   Int      @default(24)
+  vatCents  Int      @default(0)
+  totalCents Int     @default(0)
+  notes     String?
+  // Phase 2: myDATA integration placeholders (ΑΠΥ μέσω αδειοδοτημένου παρόχου)
+  mydataStatus String?
+  mydataUid    String?
+  createdAt DateTime @default(now())
+
+  lines InvoiceLine[]
+
+  @@unique([firmId, number])
+  @@index([firmId])
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  minutes     Int?
+  rateCents   Int?
+  amountCents Int
+}
+
+model Note {
+  id       String @id @default(cuid())
+  firmId   String
+  caseId   String
+  case     Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+  content  String
+  // manual | ai_structured
+  source   String @default("manual")
+  aiLogId  String?
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+// Lead capture from the public per-firm contact page
+model Lead {
+  id      String @id @default(cuid())
+  firmId  String
+  firm    Firm   @relation(fields: [firmId], references: [id])
+  name    String
+  email   String?
+  phone   String?
+  message String
+  // new | contacted | converted | dismissed
+  status  String @default("new")
+  consent Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([firmId, status])
+}
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  firmId     String
+  firm       Firm    @relation(fields: [firmId], references: [id])
+  userId     String?
+  user       User?   @relation(fields: [userId], references: [id])
+  // e.g. case.view, case.create, document.download, ai.notes_structure
+  action     String
+  entityType String
+  entityId   String
+  detail     String?
+  aiInvolved Boolean @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([firmId, createdAt])
+}
+
+model AIInteractionLog {
+  id       String @id @default(cuid())
+  firmId   String
+  firm     Firm   @relation(fields: [firmId], references: [id])
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  // notes_structure | doc_summary | doc_draft | reception_chat
+  feature  String
+  // pseudonymized input (never store raw party names where avoidable)
+  inputSummary String
+  output   String
+  model    String
+  provider String
+  caseId   String?
+  reviewedByLawyer Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([firmId, createdAt])
+}
