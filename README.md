@@ -19,8 +19,8 @@ Web εφαρμογή όπου δικηγορικά γραφεία διαχειρ
 
 ## Tech stack
 
-- **Next.js 15+** (App Router) · TypeScript · Tailwind CSS
-- **PostgreSQL** (Neon) · Prisma ORM
+- **Next.js 16** (App Router, Turbopack) · TypeScript · Tailwind CSS v4
+- **PostgreSQL** (Prisma Postgres / Neon / οποιαδήποτε) · Prisma 7 ORM (driver adapters)
 - **Auth.js (NextAuth v5)** — credentials, role-based (owner / lawyer / trainee / staff)
 - **Vercel** deployment
 - **AI provider**: configurable μέσω env (`AI_PROVIDER`, `AI_API_KEY`, `AI_BASE_URL`) — vendor-agnostic
@@ -37,12 +37,18 @@ npm run dev
 
 Demo login (μετά το seed): `owner@demo.nomiko.gr` / `demo1234!`
 
-## Deploy (Vercel + Neon)
+## Deploy (Vercel + Postgres)
 
-1. Δημιούργησε Neon project → πάρε το `DATABASE_URL`
-2. Import το repo στο Vercel → πρόσθεσε env vars (`DATABASE_URL`, `AUTH_SECRET`, `AUTH_TRUST_HOST=true`)
+1. Βάση: `npx create-db` (δωρεάν Prisma Postgres — κάνε **claim** από το link για να μη διαγραφεί) ή Neon
+2. [vercel.com/new](https://vercel.com/new) → Import το repo → πρόσθεσε env vars:
+   - `DATABASE_URL` (το connection string)
+   - `AUTH_SECRET` (π.χ. `openssl rand -base64 32`)
+   - `AUTH_TRUST_HOST=true`
+   - προαιρετικά `ENABLE_AI_FEATURES=true` (demo μόνο)
 3. Deploy — το `postinstall` τρέχει `prisma generate` αυτόματα
-4. Τρέξε `npx prisma db push && npm run seed` με το production `DATABASE_URL` (μία φορά)
+4. Μία φορά, τοπικά με το ίδιο `DATABASE_URL`: `npx prisma db push && npm run seed`
+
+> Σημείωση: τα uploads εγγράφων αποθηκεύονται σε local disk (ephemeral στο Vercel) — demo only. Το storage layer είναι interface, έτοιμο για S3/Blob provider.
 
 > ⚠️ Το public preview τρέχει ΜΟΝΟ με πλαστά/demo δεδομένα. Ποτέ πραγματικά στοιχεία πελατών πριν κλειδωθεί DPA-backed AI πάροχος και γίνει security review.
 
