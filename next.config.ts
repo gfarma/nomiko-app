@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Self-hosted deployment: standalone server bundle (node .next/standalone/server.js)
+  output: "standalone",
 };
 
 export default nextConfig;
