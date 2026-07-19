@@ -19,8 +19,21 @@ import {
   type PracticeArea,
 } from "@/lib/constants";
 import { formatDate, formatDateTime, formatMinutes, formatMoney } from "@/lib/format";
-import { addDeadline, addNote, addTimeEntry, setDeadlineStatus, updateCase, uploadDocument } from "../actions";
+import { findConflictsForCase } from "@/lib/conflict";
+import {
+  addDeadline,
+  addNote,
+  addTimeEntry,
+  postponeDeadline,
+  setDeadlineStatus,
+  setPortalEnabled,
+  toggleDeadlineClientVisibility,
+  toggleDocumentClientVisibility,
+  updateCase,
+  uploadDocument,
+} from "../actions";
 import { CustomFieldInputs, parseCustomValues, parseTemplateFields } from "../custom-fields";
+import { CopyLinkButton } from "./copy-link";
 
 export const metadata: Metadata = { title: "Υπόθεση" };
 
@@ -45,6 +58,11 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
 
   // Attorney-client privilege: log every access to case file
   await audit({ firmId: user.firmId, userId: user.id, action: "case.view", entityType: "Case", entityId: c.id });
+
+  // Έλεγχος σύγκρουσης συμφερόντων (ενδεικτικός — κρίνει ο δικηγόρος)
+  const conflicts = legalAccess
+    ? await findConflictsForCase({ firmId: user.firmId, caseId: c.id, clientId: c.clientId, opposingParty: c.opposingParty })
+    : [];
 
   const [clients, templates] = await Promise.all([
     prisma.client.findMany({ where: { firmId: user.firmId }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true } }),
@@ -76,6 +94,28 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
         }
       />
 
+      {/* Conflict-of-interest warning */}
+      {conflicts.length > 0 && (
+        <div className="card border-oxblood/40 bg-oxblood-pale p-4 mb-6 text-sm">
+          <p className="font-bold text-oxblood mb-1">⚠ Πιθανή σύγκρουση συμφερόντων — απαιτείται έλεγχος</p>
+          <ul className="list-disc ml-5 space-y-0.5 text-ink">
+            {conflicts.map((h, i) => (
+              <li key={i}>
+                {h.kind === "opposing_is_client" ? (
+                  <>Ο αντίδικος «{c.opposingParty}» ταιριάζει με τον πελάτη του γραφείου <strong>{h.matchedName}</strong>.</>
+                ) : (
+                  <>
+                    Ο εντολέας εμφανίζεται ως αντίδικος («{h.matchedName}») στην υπόθεση{" "}
+                    <Link href={`/cases/${h.caseId}`} className="underline font-medium">{h.caseTitle}</Link>.
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-ink-faint mt-1">Ενδεικτική αντιστοίχιση ονομάτων — ενδέχεται συνωνυμία.</p>
+        </div>
+      )}
+
       {/* Overview */}
       <section className="card p-5 mb-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
         <div>
@@ -96,6 +136,18 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
           <p className="kicker">Σταδιο</p>
           <p>{c.stage || "—"}</p>
         </div>
+        {legalAccess && (
+          <>
+            <div className="sm:col-span-2">
+              <p className="kicker">Αντιδικος</p>
+              <p>{c.opposingParty || "—"}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="kicker">Πληρεξουσιος αντιδικου</p>
+              <p>{c.opposingCounsel || "—"}</p>
+            </div>
+          </>
+        )}
         {legalAccess && c.description && (
           <div className="sm:col-span-2 lg:col-span-4">
             <p className="kicker">Περιγραφη</p>
@@ -119,6 +171,38 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
           <span>Ενημέρωση: {formatDate(c.updatedAt)}</span>
         </div>
       </section>
+
+      {/* Client portal («Ο φάκελός μου») */}
+      {legalAccess && (
+        <section className="card p-5 mb-6 flex flex-wrap items-center gap-4 border-brass/40">
+          <div className="flex-1 min-w-60">
+            <p className="kicker text-brass-dark">Πυλη εντολεα — «Ο φακελος μου»</p>
+            <p className="text-sm text-ink-soft mt-1">
+              {c.portalEnabled
+                ? "Ενεργή. Ο εντολέας βλέπει πορεία, δικασίμους/προθεσμίες και έγγραφα που έχετε σημάνει ως ορατά (👁)."
+                : "Δώστε στον εντολέα ασφαλές link παρακολούθησης της υπόθεσης — χωρίς κωδικούς."}
+            </p>
+          </div>
+          {c.portalEnabled && c.portalToken && (
+            <>
+              <a href={`/f/${c.portalToken}`} target="_blank" className="text-sm underline underline-offset-2 text-brass-dark">
+                Προβολή ↗
+              </a>
+              <CopyLinkButton path={`/f/${c.portalToken}`} />
+            </>
+          )}
+          <form
+            action={async () => {
+              "use server";
+              await setPortalEnabled(c.id, !c.portalEnabled);
+            }}
+          >
+            <button className={`btn ${c.portalEnabled ? "btn-danger" : "btn-brass"}`}>
+              {c.portalEnabled ? "Απενεργοποίηση" : "Ενεργοποίηση πύλης"}
+            </button>
+          </form>
+        </section>
+      )}
 
       {/* Edit (collapsible) */}
       {legalAccess && (
@@ -167,6 +251,14 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="label" htmlFor="opposingParty">Αντίδικος</label>
+                <input id="opposingParty" name="opposingParty" defaultValue={c.opposingParty ?? ""} className="field" />
+              </div>
+              <div>
+                <label className="label" htmlFor="opposingCounsel">Πληρεξούσιος αντιδίκου</label>
+                <input id="opposingCounsel" name="opposingCounsel" defaultValue={c.opposingCounsel ?? ""} className="field" />
+              </div>
             </div>
             <div>
               <label className="label" htmlFor="description">Περιγραφή</label>
@@ -188,23 +280,66 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
           </h2>
           <ul className="divide-y divide-line">
             {c.deadlines.map((d) => (
-              <li key={d.id} className="px-5 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className={`font-medium truncate ${d.status === "done" ? "line-through text-ink-faint" : ""}`}>{d.title}</p>
-                  <p className="text-xs text-ink-faint">
-                    {DEADLINE_TYPE_LABELS[d.type as (typeof DEADLINE_TYPES)[number]] ?? d.type} · {formatDateTime(d.dueAt)}
-                  </p>
+              <li key={d.id} className="px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium truncate ${d.status === "done" ? "line-through text-ink-faint" : ""}`}>
+                      {d.type === "hearing" && "⚖ "}
+                      {d.title}
+                    </p>
+                    <p className="text-xs text-ink-faint">
+                      {DEADLINE_TYPE_LABELS[d.type as (typeof DEADLINE_TYPES)[number]] ?? d.type} · {formatDateTime(d.dueAt)}
+                      {d.notes ? ` · ${d.notes}` : ""}
+                    </p>
+                  </div>
+                  <DueChip dueAt={d.dueAt} status={d.status} />
+                  {legalAccess && (
+                    <form
+                      action={async () => {
+                        "use server";
+                        await toggleDeadlineClientVisibility(d.id);
+                      }}
+                    >
+                      <button
+                        className={`btn text-xs px-2 py-1 ${d.visibleToClient ? "btn-brass" : "btn-secondary opacity-60"}`}
+                        title={d.visibleToClient ? "Ορατή στον εντολέα — κλικ για απόκρυψη" : "Κρυφή από τον εντολέα — κλικ για εμφάνιση"}
+                      >
+                        👁
+                      </button>
+                    </form>
+                  )}
+                  {d.status === "pending" && (
+                    <form
+                      action={async () => {
+                        "use server";
+                        await setDeadlineStatus(d.id, "done");
+                      }}
+                    >
+                      <button className="btn btn-secondary text-xs px-2 py-1" title="Σήμανση ως ολοκληρωμένη">✓</button>
+                    </form>
+                  )}
                 </div>
-                <DueChip dueAt={d.dueAt} status={d.status} />
                 {d.status === "pending" && (
-                  <form
-                    action={async () => {
-                      "use server";
-                      await setDeadlineStatus(d.id, "done");
-                    }}
-                  >
-                    <button className="btn btn-secondary text-xs px-2 py-1" title="Σήμανση ως ολοκληρωμένη">✓</button>
-                  </form>
+                  <details className="mt-1 ml-1">
+                    <summary className="text-xs text-ink-faint cursor-pointer select-none">Αναβολή…</summary>
+                    <form
+                      action={async (formData: FormData) => {
+                        "use server";
+                        await postponeDeadline(d.id, formData);
+                      }}
+                      className="flex items-end gap-2 mt-2"
+                    >
+                      <div>
+                        <label className="label">Νέα ημερομηνία</label>
+                        <input name="newDate" type="datetime-local" required className="field text-xs py-1.5" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="label">Λόγος (προαιρετικά)</label>
+                        <input name="reason" className="field text-xs py-1.5" placeholder="π.χ. εκ του πινακίου" />
+                      </div>
+                      <button className="btn btn-secondary text-xs">Αναβολή</button>
+                    </form>
+                  </details>
                 )}
               </li>
             ))}
@@ -303,6 +438,19 @@ export default async function CaseDetailPage(props: PageProps<"/cases/[id]">) {
                       {(d.size / 1024).toFixed(0)}KB · {d.uploadedBy?.name ?? "—"}
                     </p>
                   </div>
+                  <form
+                    action={async () => {
+                      "use server";
+                      await toggleDocumentClientVisibility(d.id);
+                    }}
+                  >
+                    <button
+                      className={`btn text-xs px-2 py-1 ${d.visibleToClient ? "btn-brass" : "btn-secondary opacity-60"}`}
+                      title={d.visibleToClient ? "Ορατό στον εντολέα" : "Κρυφό από τον εντολέα"}
+                    >
+                      👁
+                    </button>
+                  </form>
                   <span className="text-xs text-ink-faint tabular">{formatDate(d.createdAt)}</span>
                 </li>
               ))}

@@ -100,9 +100,17 @@ export default async function InvoiceDetailPage(props: PageProps<"/invoices/[id]
           </dl>
         </div>
 
-        <p className="text-xs text-ink-faint mt-5 border-t border-line pt-3">
-          myDATA: {inv.mydataUid ? `UID ${inv.mydataUid}` : "Δεν έχει διαβιβαστεί (Phase 2 — μέσω αδειοδοτημένου παρόχου)."}
-        </p>
+        <div className="text-xs text-ink-faint mt-5 border-t border-line pt-3 space-y-1">
+          {(inv.grammatioNumber || inv.grammatioCents) && (
+            <p>
+              Γραμμάτιο προείσπραξης ΔΣΑ: {inv.grammatioNumber ?? "—"}
+              {inv.grammatioCents ? ` · ${formatMoney(inv.grammatioCents)}` : ""}
+            </p>
+          )}
+          <p>
+            myDATA: {inv.mydataUid ? `UID ${inv.mydataUid}` : "Δεν έχει διαβιβαστεί (Phase 2 — μέσω αδειοδοτημένου παρόχου)."}
+          </p>
+        </div>
       </div>
 
       {transitions.length > 0 && (

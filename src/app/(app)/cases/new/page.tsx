@@ -100,6 +100,14 @@ export default async function NewCasePage(props: PageProps<"/cases/new">) {
               ))}
             </select>
           </div>
+          <div>
+            <label className="label" htmlFor="opposingParty">Αντίδικος</label>
+            <input id="opposingParty" name="opposingParty" className="field" placeholder="π.χ. ΧΨΩ ΑΕ / Ι. Δημητρίου" />
+          </div>
+          <div>
+            <label className="label" htmlFor="opposingCounsel">Πληρεξούσιος αντιδίκου</label>
+            <input id="opposingCounsel" name="opposingCounsel" className="field" />
+          </div>
         </div>
         <div>
           <label className="label" htmlFor="description">Περιγραφή</label>

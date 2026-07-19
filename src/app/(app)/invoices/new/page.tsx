@@ -80,12 +80,20 @@ export default async function NewInvoicePage(props: PageProps<"/invoices/new">) 
               ))}
             </tbody>
           </table>
-          <div className="p-4 border-t border-line-strong bg-paper/50 flex items-end justify-between gap-4">
-            <div className="w-32">
+          <div className="p-4 border-t border-line-strong bg-paper/50 flex flex-wrap items-end gap-4">
+            <div className="w-28">
               <label className="label" htmlFor="vatRate">ΦΠΑ %</label>
               <input id="vatRate" name="vatRate" type="number" min={0} max={24} defaultValue={24} className="field" />
             </div>
-            <button className="btn btn-primary">Δημιουργία τιμολογίου</button>
+            <div className="w-44">
+              <label className="label" htmlFor="grammatioNumber">Γραμμάτιο ΔΣΑ (αρ.)</label>
+              <input id="grammatioNumber" name="grammatioNumber" className="field" placeholder="προαιρετικό" />
+            </div>
+            <div className="w-36">
+              <label className="label" htmlFor="grammatioEuros">Γραμμάτιο (€)</label>
+              <input id="grammatioEuros" name="grammatioEuros" type="number" min={0} step="0.01" className="field" />
+            </div>
+            <button className="btn btn-primary ml-auto">Δημιουργία τιμολογίου</button>
           </div>
         </form>
       )}

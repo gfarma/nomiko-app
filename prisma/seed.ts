@@ -135,6 +135,8 @@ async function main() {
       caseNumber: "ΓΑΚ 12345/2026", practiceArea: "civil", court: "Μονομελές Πρωτοδικείο Αθηνών",
       stage: "Κατάθεση προτάσεων", status: "active", templateId: civilTpl.id,
       description: "Υλικές ζημίες και ηθική βλάβη από τροχαίο ατύχημα (demo).",
+      opposingParty: "Ασφαλιστική Προστασία ΑΕ (DEMO)", opposingCounsel: "Ι. Δημητρίου",
+      portalEnabled: true, portalToken: "demo-fakelos-ioannou",
       customFieldsJson: JSON.stringify({ gak: "12345/2026", eak: "678/2026", hearing_date: daysFromNow(45).toISOString().slice(0, 10), claim_amount: 25000 }),
       assignments: { create: [{ userId: owner.id }, { userId: trainee.id }] },
     },
@@ -144,6 +146,7 @@ async function main() {
       firmId: firm.id, clientId: c2.id, title: "Σύμβαση διανομής — αναθεώρηση όρων",
       practiceArea: "commercial", stage: "Διαπραγμάτευση", status: "active", templateId: commercialTpl.id,
       description: "Επισκόπηση και αναδιαπραγμάτευση σύμβασης αποκλειστικής διανομής (demo).",
+      opposingParty: "Εισαγωγική ΕΠΕ (DEMO)",
       customFieldsJson: JSON.stringify({ contract_type: "Διανομή", counterparty: "Εισαγωγική ΕΠΕ", value: 120000 }),
       assignments: { create: [{ userId: lawyer.id }] },
     },
@@ -154,6 +157,8 @@ async function main() {
       caseNumber: "ΓΑΚ 55555/2026", practiceArea: "labor", court: "Ειρηνοδικείο Αθηνών",
       stage: "Αναμονή δικασίμου", status: "active",
       description: "Αξίωση αποζημίωσης απόλυσης και δεδουλευμένων (demo).",
+      // Επίτηδες: ο αντίδικος εδώ είναι υφιστάμενος πελάτης -> δείχνει τον έλεγχο σύγκρουσης
+      opposingParty: "Τεχνική Ανάπτυξη ΑΕ (DEMO)", opposingCounsel: "Σ. Παππάς",
       assignments: { create: [{ userId: lawyer.id }, { userId: trainee.id }] },
     },
   });
@@ -171,13 +176,35 @@ async function main() {
   // Deadlines — the critical entity: some close, some comfortable
   await prisma.deadline.createMany({
     data: [
-      { firmId: firm.id, caseId: case1.id, title: "Κατάθεση προτάσεων", type: "procedural", dueAt: daysFromNow(3), remindDaysBefore: 5, createdById: owner.id },
+      { firmId: firm.id, caseId: case1.id, title: "Κατάθεση προτάσεων", type: "procedural", dueAt: daysFromNow(3), remindDaysBefore: 5, createdById: owner.id, visibleToClient: true },
       { firmId: firm.id, caseId: case1.id, title: "Προσθήκη — αντίκρουση", type: "procedural", dueAt: daysFromNow(18), remindDaysBefore: 5, createdById: owner.id },
-      { firmId: firm.id, caseId: case3.id, title: "Δικάσιμος (Ειρηνοδικείο Αθηνών)", type: "procedural", dueAt: daysFromNow(9), remindDaysBefore: 7, createdById: lawyer.id },
       { firmId: firm.id, caseId: case2.id, title: "Παράδοση σχεδίου σύμβασης στον πελάτη", type: "other", dueAt: daysFromNow(6), remindDaysBefore: 3, createdById: lawyer.id },
-      { firmId: firm.id, caseId: case4.id, title: "Δικάσιμος — Τριμελές Πλημ/κείο", type: "procedural", dueAt: daysFromNow(30), remindDaysBefore: 10, createdById: owner.id },
+      { firmId: firm.id, caseId: case4.id, title: "Δικάσιμος — Τριμελές Πλημ/κείο", type: "hearing", dueAt: daysFromNow(30), remindDaysBefore: 10, createdById: owner.id },
       { firmId: firm.id, caseId: case2.id, title: "Απάντηση σε εξώδικο", type: "other", dueAt: daysFromNow(-2), status: "done", completedAt: daysFromNow(-3), createdById: lawyer.id },
     ],
+  });
+
+  // Δικάσιμος με ιστορικό αναβολής (case3): παλιά αναβλήθηκε -> νέα σε 9 ημέρες
+  const postponedHearing = await prisma.deadline.create({
+    data: {
+      firmId: firm.id, caseId: case3.id, title: "Δικάσιμος (Ειρηνοδικείο Αθηνών)", type: "hearing",
+      dueAt: daysFromNow(-15), status: "postponed", remindDaysBefore: 7, createdById: lawyer.id, visibleToClient: true,
+    },
+  });
+  await prisma.deadline.create({
+    data: {
+      firmId: firm.id, caseId: case3.id, title: "Δικάσιμος (Ειρηνοδικείο Αθηνών)", type: "hearing",
+      dueAt: daysFromNow(9), remindDaysBefore: 7, createdById: lawyer.id, visibleToClient: true,
+      notes: "Αναβολή: εκ του πινακίου", rescheduledFromId: postponedHearing.id,
+    },
+  });
+
+  // Ημερομηνία δικασίμου ορατή και στην πύλη εντολέα του case1
+  await prisma.deadline.create({
+    data: {
+      firmId: firm.id, caseId: case1.id, title: "Συζήτηση αγωγής", type: "hearing",
+      dueAt: daysFromNow(45), remindDaysBefore: 14, createdById: owner.id, visibleToClient: true,
+    },
   });
 
   // Time entries
@@ -198,6 +225,7 @@ async function main() {
       firmId: firm.id, clientId: c1.id, caseId: case1.id, number: "ΤΠΥ-2026-001",
       status: "issued", issueDate: daysFromNow(-1), dueDate: daysFromNow(29),
       subtotalCents: 54000, vatRate: 24, vatCents: 12960, totalCents: 66960,
+      grammatioNumber: "Γ-2026/004512", grammatioCents: 6900,
       notes: "Demo τιμολόγιο — myDATA placeholder (Phase 2).",
       lines: {
         create: [

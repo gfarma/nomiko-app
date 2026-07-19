@@ -113,6 +113,11 @@ model Case {
   practiceArea String   @default("civil")
   court        String? // δικαστήριο / αρχή
   stage        String? // στάδιο υπόθεσης (free text)
+  opposingParty   String? // αντίδικος — τροφοδοτεί τον έλεγχο σύγκρουσης συμφερόντων
+  opposingCounsel String? // πληρεξούσιος αντιδίκου
+  // Client portal («Ο φάκελός μου») — public read-only view via unguessable token
+  portalEnabled Boolean @default(false)
+  portalToken   String? @unique
   // active | pending | closed | archived
   status       String   @default("active")
   description  String?
@@ -150,13 +155,17 @@ model Deadline {
   caseId String
   case   Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   title  String
-  // procedural | administrative | other  (δικονομική / διοικητική / άλλη)
+  // hearing | procedural | administrative | other  (δικάσιμος / δικονομική / διοικητική / άλλη)
   type   String   @default("procedural")
   dueAt  DateTime
-  // pending | done | missed
+  // pending | done | missed | postponed
   status String   @default("pending")
   notes  String?
   remindDaysBefore Int @default(5)
+  // αναβολή: link back to the hearing this one replaced
+  rescheduledFromId String?
+  // shown on the client portal
+  visibleToClient Boolean @default(false)
   createdById String?
   createdBy   User?   @relation(fields: [createdById], references: [id])
   completedAt DateTime?
@@ -181,6 +190,8 @@ model Document {
   version  Int    @default(1)
   // previous version chain
   parentId String?
+  // shown/downloadable on the client portal
+  visibleToClient Boolean @default(false)
   uploadedById String?
   uploadedBy   User?  @relation(fields: [uploadedById], references: [id])
   createdAt DateTime @default(now())
@@ -226,6 +237,9 @@ model Invoice {
   vatCents  Int      @default(0)
   totalCents Int     @default(0)
   notes     String?
+  // Γραμμάτιο προείσπραξης ΔΣΑ (όπου απαιτείται για παράσταση)
+  grammatioNumber String?
+  grammatioCents  Int?
   // Phase 2: myDATA integration placeholders (ΑΠΥ μέσω αδειοδοτημένου παρόχου)
   mydataStatus String?
   mydataUid    String?

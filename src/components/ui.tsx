@@ -37,6 +37,7 @@ export function Badge({ tone = "neutral", children }: { tone?: keyof typeof BADG
 /** Prominent deadline urgency chip — a missed deadline is potential malpractice. */
 export function DueChip({ dueAt, status }: { dueAt: Date; status: string }) {
   if (status === "done") return <Badge tone="green">Ολοκληρώθηκε</Badge>;
+  if (status === "postponed") return <Badge tone="neutral">Αναβλήθηκε</Badge>;
   const d = daysUntil(dueAt);
   if (status === "missed" || d < 0) return <Badge tone="red">Εκπρόθεσμη {d < 0 ? `(${Math.abs(d)}ημ)` : ""}</Badge>;
   if (d === 0) return <Badge tone="red">ΣΗΜΕΡΑ</Badge>;

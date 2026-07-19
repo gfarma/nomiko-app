@@ -12,6 +12,8 @@ export async function createInvoiceFromTime(formData: FormData) {
   const user = await requireUser();
   const clientId = z.string().min(1).parse(formData.get("clientId"));
   const vatRate = z.coerce.number().int().min(0).max(24).parse(formData.get("vatRate") || 24);
+  const grammatioNumber = String(formData.get("grammatioNumber") || "").trim() || null;
+  const grammatioEuros = z.coerce.number().min(0).max(100000).parse(formData.get("grammatioEuros") || 0);
   const entryIds = formData.getAll("entryIds").map(String);
   if (entryIds.length === 0) throw new Error("Επιλέξτε τουλάχιστον μία καταχώρηση χρόνου");
 
@@ -47,6 +49,8 @@ export async function createInvoiceFromTime(formData: FormData) {
       vatRate,
       vatCents,
       totalCents: subtotalCents + vatCents,
+      grammatioNumber,
+      grammatioCents: grammatioEuros > 0 ? Math.round(grammatioEuros * 100) : null,
       dueDate: new Date(Date.now() + 30 * 86400000),
       lines: {
         create: entries.map((e) => ({

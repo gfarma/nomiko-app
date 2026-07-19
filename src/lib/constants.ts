@@ -43,20 +43,30 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   archived: "Αρχειοθετημένη",
 };
 
-export const DEADLINE_TYPES = ["procedural", "administrative", "other"] as const;
+export const DEADLINE_TYPES = ["hearing", "procedural", "administrative", "other"] as const;
 export type DeadlineType = (typeof DEADLINE_TYPES)[number];
 export const DEADLINE_TYPE_LABELS: Record<DeadlineType, string> = {
-  procedural: "Δικονομική",
+  hearing: "Δικάσιμος",
+  procedural: "Δικονομική προθεσμία",
   administrative: "Διοικητική",
   other: "Άλλη",
 };
 
-export const DEADLINE_STATUSES = ["pending", "done", "missed"] as const;
+export const DEADLINE_STATUSES = ["pending", "done", "missed", "postponed"] as const;
 export type DeadlineStatus = (typeof DEADLINE_STATUSES)[number];
 export const DEADLINE_STATUS_LABELS: Record<DeadlineStatus, string> = {
   pending: "Εκκρεμεί",
   done: "Ολοκληρώθηκε",
   missed: "Χάθηκε",
+  postponed: "Αναβλήθηκε",
+};
+
+/** Plain-language case status for the client portal («Ο φάκελός μου»). */
+export const PORTAL_STATUS_LABELS: Record<CaseStatus, string> = {
+  active: "Σε εξέλιξη",
+  pending: "Σε αναμονή",
+  closed: "Ολοκληρώθηκε",
+  archived: "Στο αρχείο",
 };
 
 export const DOC_TYPES = [

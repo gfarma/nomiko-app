@@ -1,5 +1,6 @@
 "use server";
 
+import crypto from "crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -19,6 +20,8 @@ const caseSchema = z.object({
   status: z.enum(CASE_STATUSES),
   description: z.string().trim().optional(),
   templateId: z.string().optional(),
+  opposingParty: z.string().trim().optional(),
+  opposingCounsel: z.string().trim().optional(),
 });
 
 async function assertCaseInFirm(caseId: string, firmId: string) {
@@ -37,9 +40,8 @@ function collectCustomFields(formData: FormData): string {
   return JSON.stringify(custom);
 }
 
-export async function createCase(formData: FormData) {
-  const user = await requireUser();
-  const data = caseSchema.parse({
+function parseCaseForm(formData: FormData) {
+  return caseSchema.parse({
     title: formData.get("title"),
     clientId: formData.get("clientId"),
     practiceArea: formData.get("practiceArea"),
@@ -49,7 +51,14 @@ export async function createCase(formData: FormData) {
     status: formData.get("status") || "active",
     description: formData.get("description") || undefined,
     templateId: formData.get("templateId") || undefined,
+    opposingParty: formData.get("opposingParty") || undefined,
+    opposingCounsel: formData.get("opposingCounsel") || undefined,
   });
+}
+
+export async function createCase(formData: FormData) {
+  const user = await requireUser();
+  const data = parseCaseForm(formData);
 
   // firm-scope checks on referenced entities
   const client = await prisma.client.findFirst({ where: { id: data.clientId, firmId: user.firmId } });
@@ -81,17 +90,7 @@ export async function updateCase(caseId: string, formData: FormData) {
   const user = await requireUser();
   await assertCaseInFirm(caseId, user.firmId);
 
-  const data = caseSchema.parse({
-    title: formData.get("title"),
-    clientId: formData.get("clientId"),
-    practiceArea: formData.get("practiceArea"),
-    caseNumber: formData.get("caseNumber") || undefined,
-    court: formData.get("court") || undefined,
-    stage: formData.get("stage") || undefined,
-    status: formData.get("status") || "active",
-    description: formData.get("description") || undefined,
-    templateId: formData.get("templateId") || undefined,
-  });
+  const data = parseCaseForm(formData);
 
   await prisma.case.update({
     where: { id: caseId },
@@ -142,6 +141,84 @@ export async function addDeadline(caseId: string, formData: FormData) {
   revalidatePath(`/cases/${caseId}`);
   revalidatePath("/deadlines");
   revalidatePath("/dashboard");
+}
+
+/** Αναβολή δικασίμου: η παλιά σημαίνεται «Αναβλήθηκε», δημιουργείται νέα με ιστορικό. */
+export async function postponeDeadline(deadlineId: string, formData: FormData) {
+  const user = await requireUser();
+  const deadline = await prisma.deadline.findFirst({ where: { id: deadlineId, firmId: user.firmId } });
+  if (!deadline) throw new Error("Η προθεσμία δεν βρέθηκε");
+  if (deadline.status !== "pending") throw new Error("Μόνο εκκρεμείς προθεσμίες αναβάλλονται");
+
+  const newDate = z.string().min(1).parse(formData.get("newDate"));
+  const reason = String(formData.get("reason") || "").trim();
+
+  const [, created] = await prisma.$transaction([
+    prisma.deadline.update({ where: { id: deadlineId }, data: { status: "postponed" } }),
+    prisma.deadline.create({
+      data: {
+        firmId: user.firmId,
+        caseId: deadline.caseId,
+        title: deadline.title,
+        type: deadline.type,
+        dueAt: new Date(newDate),
+        remindDaysBefore: deadline.remindDaysBefore,
+        notes: reason ? `Αναβολή: ${reason}` : deadline.notes,
+        createdById: user.id,
+        rescheduledFromId: deadline.id,
+        visibleToClient: deadline.visibleToClient,
+      },
+    }),
+  ]);
+
+  await audit({
+    firmId: user.firmId,
+    userId: user.id,
+    action: "deadline.postpone",
+    entityType: "Deadline",
+    entityId: created.id,
+    detail: `${deadline.title}: ${deadline.dueAt.toISOString().slice(0, 10)} -> ${newDate}`,
+  });
+  revalidatePath(`/cases/${deadline.caseId}`);
+  revalidatePath("/deadlines");
+  revalidatePath("/dashboard");
+}
+
+// ---------- Client portal («Ο φάκελός μου») ----------
+
+export async function setPortalEnabled(caseId: string, enabled: boolean) {
+  const user = await requireUser();
+  if (!canSeeLegalContent(user.role)) throw new Error("Δεν έχετε πρόσβαση");
+  const c = await assertCaseInFirm(caseId, user.firmId);
+
+  const token = c.portalToken ?? crypto.randomBytes(18).toString("base64url");
+  await prisma.case.update({ where: { id: caseId }, data: { portalEnabled: enabled, portalToken: token } });
+
+  await audit({
+    firmId: user.firmId,
+    userId: user.id,
+    action: enabled ? "portal.enable" : "portal.disable",
+    entityType: "Case",
+    entityId: caseId,
+  });
+  revalidatePath(`/cases/${caseId}`);
+}
+
+export async function toggleDeadlineClientVisibility(deadlineId: string) {
+  const user = await requireUser();
+  const d = await prisma.deadline.findFirst({ where: { id: deadlineId, firmId: user.firmId } });
+  if (!d) throw new Error("Η προθεσμία δεν βρέθηκε");
+  await prisma.deadline.update({ where: { id: deadlineId }, data: { visibleToClient: !d.visibleToClient } });
+  revalidatePath(`/cases/${d.caseId}`);
+}
+
+export async function toggleDocumentClientVisibility(documentId: string) {
+  const user = await requireUser();
+  if (!canSeeLegalContent(user.role)) throw new Error("Δεν έχετε πρόσβαση");
+  const d = await prisma.document.findFirst({ where: { id: documentId, firmId: user.firmId } });
+  if (!d) throw new Error("Το έγγραφο δεν βρέθηκε");
+  await prisma.document.update({ where: { id: documentId }, data: { visibleToClient: !d.visibleToClient } });
+  revalidatePath(`/cases/${d.caseId}`);
 }
 
 export async function setDeadlineStatus(deadlineId: string, status: "pending" | "done" | "missed") {
