@@ -33,6 +33,8 @@ const SEEDS = [
   "/leads",
   "/ai/notes",
   "/settings",
+  "/search",
+  "/search?q=Τεχνική",
   "/papadopoulos-demo/contact",
 ];
 
