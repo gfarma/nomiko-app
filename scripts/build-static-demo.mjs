@@ -127,8 +127,10 @@ async function saveAsset(assetPath) {
   let out = buf;
   if (assetPath.endsWith(".css")) {
     const css = buf.toString("utf8");
-    // queue fonts/images referenced inside css, then make refs relative
+    // queue fonts/images referenced inside css (absolute OR relative form),
+    // then make refs relative
     for (const m of css.matchAll(/\/_next\/static\/media\/[^)"' ]+/g)) assets.add(m[0]);
+    for (const m of css.matchAll(/\.\.\/media\/([^)"' ]+)/g)) assets.add(`/_next/static/media/${m[1]}`);
     out = Buffer.from(css.replaceAll("/_next/static/media/", "../media/"), "utf8");
   }
   const target = path.join(OUT, assetPath.replace(/^\//, ""));
